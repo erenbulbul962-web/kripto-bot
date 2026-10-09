@@ -1,4 +1,4 @@
-# KRİPTO 15m TELEGRAM BİLDİRİMLİ OTOMATİK TARAMA
+# MİDAS UYUMLU KRİPTO 15m TELEGRAM BİLDİRİMLİ OTOMATİK TARAMA
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -24,12 +24,11 @@ MIN_MUM = 100
 EMA_PERIYOT = 50
 TEMAS_TOL = 0.03                    # %3 Tolerans
 
+# Midas'ta Desteklenen Popüler Kripto Paralar
 CRYPTO_LIST = [
-    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE", "DOT", "NEAR",
-    "SUI", "APT", "ICP", "ETC", "ATOM", "ALGO", "HBAR", "XLM", "TRX", "FTM",
-    "SEI", "TIA", "INJ", "STX", "MATIC", "POL", "ARB", "OP", "IMX", "RENDER",
-    "FET", "GRT", "SHIB", "PEPE", "WIF", "BONK", "FLOKI", "UNI", "LINK", "AAVE",
-    "PENDLE", "JUP", "SAND", "MANA", "AXS", "GALA", "LTC", "BCH", "ONDO", "ENA"
+    "BTC", "ETH", "SOL", "AVAX", "XRP", "ADA", "DOGE", "DOT", "LINK", 
+    "MATIC", "NEAR", "APT", "UNI", "ATOM", "LTC", "ETC", "FTM", "ALGO", 
+    "SHIB", "PEPE", "RENDER", "INJ", "TIA", "ARB", "OP"
 ]
 CRYPTO_LIST = sorted(list(set(CRYPTO_LIST)))
 
@@ -71,7 +70,7 @@ def strateji_tara(df):
     }
 
 def main():
-    print(f"Tarama başlatıldı ({len(CRYPTO_LIST)} Coin)...")
+    print(f"Tarama başlatıldı ({len(CRYPTO_LIST)} Midas coini taranıyor)...")
     sonuclar = []
 
     for coin in CRYPTO_LIST:
@@ -88,7 +87,7 @@ def main():
             r = strateji_tara(df)
             if r:
                 sonuclar.append(coin)
-                mesaj = f"🚨 KRİPTO ALARMI!\nCoin: {coin}\nFiyat: {r['Fiyat']}\nDurum: {r['Durum']}"
+                mesaj = f"🚨 MİDAS KRİPTO ALARMI!\nCoin: {coin}\nFiyat: {r['Fiyat']}\nDurum: {r['Durum']}"
                 telegram_bildirim_gonder(mesaj)
         except Exception:
             pass
