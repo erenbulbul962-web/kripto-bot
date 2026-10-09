@@ -1,4 +1,4 @@
-# MİDAS TRY Kripto 15m Telegram Bildirimli Otomatik Tarama
+# MİDAS TRY Kripto 15m EMA 50 Temas Botu
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -24,7 +24,6 @@ MIN_MUM = 100
 EMA_PERIYOT = 50
 TEMAS_TOL = 0.03                    # %3 Tolerans
 
-# Sizin TradingView / Midas Listeniz (TRY Pariteleri)
 CRYPTO_LIST = [
     "BTC", "ETHFI", "BIO", "ENA", "FIL", "HOME"
 ]
@@ -35,9 +34,10 @@ def strateji_tara(df):
     n = len(df)
     if n < MIN_MUM:
         return None
-    o, h, l, c = df["Open"].values, df["High"].values, df["Low"].values, df["Close"].values
+    l, c = df["Low"].values, df["Close"].values
     ema = df["Close"].ewm(span=EMA_PERIYOT, adjust=False).mean().values
 
+    # Son 3 mum içinde Low değerinin EMA 50'ye %3 toleransla değip değmediğini kontrol eder
     temas_var = False
     for i in [-1, -2, -3]:
         if l[i] <= ema[i] * (1 + TEMAS_TOL):
@@ -47,25 +47,14 @@ def strateji_tara(df):
     if not temas_var:
         return None
 
-    yesil_kapama = c[-1] > o[-1]
-    alt_fitil = min(o[-1], c[-1]) - l[-1]
-    govde = abs(c[-1] - o[-1])
-    
-    if not (yesil_kapama or (alt_fitil > govde * 0.5)):
-        return None
-
     return {
         "Fiyat": round(c[-1], 2),
-        "Durum": "EMA Teması + Tepki",
-        "_s": c[-1] / ema[-1] - 1,
+        "Durum": "EMA 50 Temas Etti!",
     }
 
 def main():
-    # Başlangıç test mesajı kaldırıldı. Bot tamamen sessiz çalışacak.
-    sonuclar = []
-
     for coin in CRYPTO_LIST:
-        s = coin + "-TRY"  # Midas TRY pariteleri için
+        s = coin + "-TRY"
         try:
             df = yf.download(s, period=PERIYOT, interval="15m", progress=False)
             if isinstance(df.columns, pd.MultiIndex):
@@ -77,8 +66,7 @@ def main():
 
             r = strateji_tara(df)
             if r:
-                sonuclar.append(coin)
-                mesaj = f"🚨 MİDAS TRY ALARMI!\nCoin: {coin}TRY\nFiyat: {r['Fiyat']}\nDurum: {r['Durum']}"
+                mesaj = f"🚨 EMA 50 TEMAS ALARMI!\nCoin: {coin}TRY\nFiyat: {r['Fiyat']}\nDurum: {r['Durum']}"
                 telegram_bildirim_gonder(mesaj)
         except Exception:
             pass
