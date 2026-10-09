@@ -61,10 +61,7 @@ def strateji_tara(df):
     }
 
 def main():
-    # Test amaçlı Telegram mesajı
-    telegram_bildirim_gonder("🟢 Kripto 15m Botu aktif listenizle (TRY) taramaya başladı!")
-    
-    print(f"Tarama başlatıldı ({len(CRYPTO_LIST)} Midas coini taranıyor)...")
+    # Başlangıç test mesajı kaldırıldı. Bot tamamen sessiz çalışacak.
     sonuclar = []
 
     for coin in CRYPTO_LIST:
@@ -85,8 +82,6 @@ def main():
                 telegram_bildirim_gonder(mesaj)
         except Exception:
             pass
-            
-    print(f"Tarama bitti. Eşleşen: {len(sonuclar)}")
 
 if __name__ == "__main__":
     main()
