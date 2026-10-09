@@ -1,4 +1,4 @@
-# MİDAS UYUMLU KRİPTO 15m TELEGRAM BİLDİRİMLİ OTOMATİK TARAMA
+# MİDAS TRY Kripto 15m Telegram Bildirimli Otomatik Tarama
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -24,19 +24,11 @@ MIN_MUM = 100
 EMA_PERIYOT = 50
 TEMAS_TOL = 0.03                    # %3 Tolerans
 
-# Midas'ta Desteklenen Popüler Kripto Paralar
+# Sizin TradingView / Midas Listeniz (TRY Pariteleri)
 CRYPTO_LIST = [
-    "BTC", "ETH", "SOL", "AVAX", "XRP", "ADA", "DOGE", "DOT", "LINK", 
-    "MATIC", "NEAR", "APT", "UNI", "ATOM", "LTC", "ETC", "FTM", "ALGO", 
-    "SHIB", "PEPE", "RENDER", "INJ", "TIA", "ARB", "OP"
+    "BTC", "ETHFI", "BIO", "ENA", "FIL", "HOME"
 ]
 CRYPTO_LIST = sorted(list(set(CRYPTO_LIST)))
-
-def hacim_orani(v, k):
-    if v is None or k < 21:
-        return np.nan
-    ort = v[k - 20:k].mean()
-    return round(float(v[k] / ort), 2) if ort > 0 else np.nan
 
 def strateji_tara(df):
     df = df.dropna()
@@ -44,7 +36,6 @@ def strateji_tara(df):
     if n < MIN_MUM:
         return None
     o, h, l, c = df["Open"].values, df["High"].values, df["Low"].values, df["Close"].values
-    v = df["Volume"].values.astype(float) if "Volume" in df.columns else None
     ema = df["Close"].ewm(span=EMA_PERIYOT, adjust=False).mean().values
 
     temas_var = False
@@ -64,20 +55,20 @@ def strateji_tara(df):
         return None
 
     return {
-        "Fiyat": round(c[-1], 4),
+        "Fiyat": round(c[-1], 2),
         "Durum": "EMA Teması + Tepki",
         "_s": c[-1] / ema[-1] - 1,
     }
 
 def main():
-    # Test amaçlı Telegram mesajı (Bağlantıyı test etmek için)
-    telegram_bildirim_gonder("🟢 Kripto 15m Botu başarıyla çalıştı ve taramaya başladı!")
+    # Test amaçlı Telegram mesajı
+    telegram_bildirim_gonder("🟢 Kripto 15m Botu aktif listenizle (TRY) taramaya başladı!")
     
     print(f"Tarama başlatıldı ({len(CRYPTO_LIST)} Midas coini taranıyor)...")
     sonuclar = []
 
     for coin in CRYPTO_LIST:
-        s = coin + "-USD"
+        s = coin + "-TRY"  # Midas TRY pariteleri için
         try:
             df = yf.download(s, period=PERIYOT, interval="15m", progress=False)
             if isinstance(df.columns, pd.MultiIndex):
@@ -90,7 +81,7 @@ def main():
             r = strateji_tara(df)
             if r:
                 sonuclar.append(coin)
-                mesaj = f"🚨 MİDAS KRİPTO ALARMI!\nCoin: {coin}\nFiyat: {r['Fiyat']}\nDurum: {r['Durum']}"
+                mesaj = f"🚨 MİDAS TRY ALARMI!\nCoin: {coin}TRY\nFiyat: {r['Fiyat']}\nDurum: {r['Durum']}"
                 telegram_bildirim_gonder(mesaj)
         except Exception:
             pass
