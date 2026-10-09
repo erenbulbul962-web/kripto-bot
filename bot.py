@@ -1,4 +1,4 @@
-# MİDAS TRY Kripto 15m EMA 50 Temas Botu (Hata Ayıklamalı)
+# MİDAS TRY Kripto 15m EMA 50 Temas Botu (Log Kontrollü)
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -20,44 +20,21 @@ def telegram_bildirim_gonder(mesaj):
 
 # ================= GENEL AYARLAR =================
 PERIYOT = "60d"
-MIN_MUM = 50
+MIN_MUM = 30
 EMA_PERIYOT = 50
-TEMAS_TOL = 0.05                    # Toleransı %5'e esnettik (Gözden kaçmasın diye)
+TEMAS_TOL = 0.08                    # Kesin yakalamak için toleransı %8 yaptık
 
-# Yahoo Finance uyumlu TRY parite formatı
 CRYPTO_SYMBOLS = {
     "BTC": "BTC-TRY",
     "ETHFI": "ETHFI-TRY",
-    "BIO": "BIO29983-TRY", # Yahoo'daki güncel listeleme adına göre gerekirse güncellenir
-    "ENA": "ENA19304-TRY",
+    "BIO": "BIO-TRY",
+    "ENA": "ENA-TRY",
     "FIL": "FIL-TRY",
     "HOME": "HOME-TRY"
 }
 
-def strateji_tara(df):
-    df = df.dropna()
-    n = len(df)
-    if n < MIN_MUM:
-        return None
-    l, c = df["Low"].values, df["Close"].values
-    ema = df["Close"].ewm(span=EMA_PERIYOT, adjust=False).mean().values
-
-    # Son 3 mum içinde Low değerinin EMA 50'ye teması
-    temas_var = False
-    for i in [-1, -2, -3]:
-        if l[i] <= ema[i] * (1 + TEMAS_TOL):
-            temas_var = True
-            break
-            
-    if not temas_var:
-        return None
-
-    return {
-        "Fiyat": round(c[-1], 2),
-        "Durum": "EMA 50 Temas Etti!",
-    }
-
 def main():
+    print("--- TARAMA BAŞLADI ---")
     for coin, ticker in CRYPTO_SYMBOLS.items():
         try:
             df = yf.download(ticker, period=PERIYOT, interval="15m", progress=False)
@@ -69,13 +46,30 @@ def main():
                 print(f"{coin}: Yetersiz veri ({len(df)} mum)")
                 continue
 
-            r = strateji_tara(df)
-            if r:
-                mesaj = f"🚨 EMA 50 TEMAS ALARMI!\nCoin: {coin}TRY\nFiyat: {r['Fiyat']}\nDurum: {r['Durum']}"
+            l, c = df["Low"].values, df["Close"].values
+            ema = df["Close"].ewm(span=EMA_PERIYOT, adjust=False).mean().values
+
+            son_fiyat = c[-1]
+            son_ema = ema[-1]
+            print(f"{coin} -> Fiyat: {son_fiyat:.2f}, EMA50: {son_ema:.2f}, Low[-1]: {l[-1]:.2f}")
+
+            # Son 3 mumda temas kontrolü
+            temas_var = False
+            for i in [-1, -2, -3]:
+                if l[i] <= ema[i] * (1 + TEMAS_TOL):
+                    temas_var = True
+                    break
+            
+            if temas_var:
+                print(f"-> {coin} İÇİN TEMAS YAKALANDI! Bildirim gönderiliyor...")
+                mesaj = f"🚨 EMA 50 TEMAS ALARMI!\nCoin: {coin}TRY\nFiyat: {round(son_fiyat, 2)}\nDurum: EMA 50 Değdi/Yaklaştı!"
                 telegram_bildirim_gonder(mesaj)
-                print(f"ALARM GÖNDERİLDİ: {coin}")
+            else:
+                print(f"-> {coin} için temas yok.")
+
         except Exception as e:
-            print(f"Hata ({coin}): {e}")
+            print(f"HATA ({coin}): {e}")
+    print("--- TARAMA BİTTİ ---")
 
 if __name__ == "__main__":
     main()
