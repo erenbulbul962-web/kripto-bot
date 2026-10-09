@@ -70,6 +70,9 @@ def strateji_tara(df):
     }
 
 def main():
+    # Test amaçlı Telegram mesajı (Bağlantıyı test etmek için)
+    telegram_bildirim_gonder("🟢 Kripto 15m Botu başarıyla çalıştı ve taramaya başladı!")
+    
     print(f"Tarama başlatıldı ({len(CRYPTO_LIST)} Midas coini taranıyor)...")
     sonuclar = []
 
