@@ -1,42 +1,146 @@
-# MİDAS / Yahoo Kripto 15m EMA 50 Temas Botu (Gelişmiş Hata Yakalama)
+# MİDAS / Yahoo Kripto 15m EMA 50 Formasyon ve GÖSREL Botu
 import numpy as np
 import pandas as pd
 import yfinance as yf
 import requests
+import json
+import os
+import matplotlib.pyplot as plt
+import mplfinance as mpf
+from io import BytesIO
 import warnings
 warnings.filterwarnings('ignore')
 
 # ================= TELEGRAM AYARLARI =================
 TELEGRAM_TOKEN = "8439366459:AAHg5TB_CrHgRjNkex8IfzAkKQgUkE1toNQ"
 TELEGRAM_CHAT_ID = "8571884020"
+STATE_FILE = "last_alerted.json"
 
-def telegram_bildirim_gonder(mesaj):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": mesaj}
-    try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        print("Telegram mesajı gönderilemedi:", e)
+def telegram_bildirim_gonder(mesaj, resim_verisi=None):
+    if resim_verisi:
+        # Görsel içeren mesaj gönderimi (sendPhoto)
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+        files = {'photo': ('graph.png', resim_verisi)}
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "caption": mesaj, "parse_mode": "Markdown"}
+        try:
+            requests.post(url, data=payload, files=files)
+        except Exception as e:
+            print("Telegram görseli gönderilemedi:", e)
+    else:
+        # Sadece metin içeren mesaj gönderimi (sendMessage)
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": mesaj, "parse_mode": "Markdown"}
+        try:
+            requests.post(url, json=payload)
+        except Exception as e:
+            print("Telegram mesajı gönderilemedi:", e)
 
-# ================= GENEL AYARLAR =================
-PERIYOT = "60d"
-MIN_MUM = 30
-EMA_PERIYOT = 50
-TEMAS_TOL = 0.08                    # %8 Tolerans
-
-# Yahoo Finance için alternatifli sembol sözlüğü
-CRYPTO_SYMBOLS = {
-    "BTC": ["BTC-USD"],
-    "ETHFI": ["ETHFI-USD"],
-    "BIO": ["BIO-USD", "BIO29983-USD"],
-    "ENA": ["ENA-USD", "ENA19304-USD"],
-    "FIL": ["FIL-USD"],
-    "HOME": ["HOME-USD", "HOME1-USD"]
+# ================= LİSTE TANIMLARI =================
+CRYPTO_MAP = {
+    "HOMETRY": ["HOME-USD", "HOME-TRY"],
+    "ETHFITRY": ["ETHFI-USD", "ETHFI-TRY"],
+    "BIOTRY": ["BIO-USD", "BIO-TRY"],
+    "ENATRY": ["ENA-USD", "ENA-TRY"],
+    "FILTRY": ["FIL-USD", "FIL-TRY"],
+    "BTCTRY": ["BTC-USD", "BTC-TRY"],
+    "FILUSDT": ["FIL-USD"],
+    "KAIAUSDC": ["KAIA-USD"],
+    "MANATRY": ["MANA-USD", "MANA-TRY"],
+    "XLMNTRY": ["XLM-USD", "XLM-TRY"],
+    "TREETRY": ["TREE-USD", "TREE-TRY"]
 }
 
-def main():
-    print("--- TARAMA BAŞLADI ---")
+PERIYOT = "30d"
+MIN_MUM = 60
+EMA_PERIYOT = 50
+TEMAS_TOL = 0.02  # %2 Hassas temas toleransı
+GRAFIK_MUM_SAYISI = 30  # Grafikte gösterilecek son mum sayısı
+
+def formasyon_analizi(df, i):
+    """
+    Belirli bir mum indexi (i) için çekiç ve yutan boğa formasyonlarını kontrol eder.
+    """
+    open_p = df["Open"].iloc[i]
+    close_p = df["Close"].iloc[i]
+    high_p = df["High"].iloc[i]
+    low_p = df["Low"].iloc[i]
     
+    govde = abs(close_p - open_p)
+    tum_boy = high_p - low_p
+    if tum_boy == 0:
+        tum_boy = 0.0001
+        
+    alt_fitil = min(open_p, close_p) - low_p
+    ust_fitil = high_p - max(open_p, close_p)
+    
+    # Çekiç (Hammer) Kriteri: Alt fitil gövdenin en az 2 katı, üst fitil küçük
+    is_hammer = (alt_fitil >= 2 * govde) and (ust_fitil < govde * 0.5) and (close_p >= open_p)
+    
+    # Yutan Boğa (Bullish Engulfing) Kriteri: Önceki mum kırmızı, şimdiki yeşil ve önceki gövdeyi tamamen yutuyor
+    is_engulfing = False
+    if i > 0:
+        prev_open = df["Open"].iloc[i-1]
+        prev_close = df["Close"].iloc[i-1]
+        prev_is_red = prev_close < prev_open
+        curr_is_green = close_p > open_p
+        is_engulfing = prev_is_red and curr_is_green and (close_p >= prev_open) and (open_p <= prev_close)
+
+    formasyonlar = []
+    if is_hammer:
+        formasyonlar.append("hammer")
+    if is_engulfing:
+        formasyonlar.append("bullish_engulfing")
+        
+    return formasyonlar
+
+def state_yukle():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def state_kaydet(state):
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f)
+    except:
+        pass
+
+def grafik_olustur(df, ema_verisi, display_name):
+    """
+    Son N mum için fiyat ve EMA 50 grafiği oluşturup BytesIO objesi olarak döndürür.
+    """
+    # Son N mumu al
+    df_plot = df.tail(GRAFIK_MUM_SAYISI)
+    ema_plot = ema_verisi.tail(GRAFIK_MUM_SAYISI)
+    
+    # EMA 50 çizgisini ekle
+    apd = mpf.make_addplot(ema_plot, color='blue', width=1.5, panel=0)
+    
+    # Grafik stil ve özellikleri
+    mc = mpf.make_marketcolors(up='green', down='red', inherit=True)
+    s  = mpf.make_mpf_style(base_mpf_style='charles', marketcolors=mc, gridstyle=':', y_on_right=True)
+    
+    # Bellek içinde görsel oluşturma
+    buf = BytesIO()
+    
+    mpf.plot(df_plot, type='candle', style=s, addplot=apd, 
+             title=f'\n{display_name} - 15m (EMA 50 Temas)', 
+             ylabel='Fiyat', y_on_right=True,
+             figscale=1.2, figsize=(10, 6),
+             savefig=dict(fname=buf, dpi=100, bbox_inches='tight'))
+    
+    buf.seek(0)
+    return buf
+
+def main():
+    last_states = state_yukle()
+    new_states = last_states.copy()
+    
+    # Dolar kurunu al (TL bazlı pariteler için)
     try:
         usdtry_df = yf.download("USDTRY=X", period="5d", interval="1d", progress=False)
         if isinstance(usdtry_df.columns, pd.MultiIndex):
@@ -45,53 +149,84 @@ def main():
     except:
         dolar_kur = 34.0
 
-    for coin, tickers in CRYPTO_SYMBOLS.items():
+    print("--- TARAMA BAŞLADI ---")
+    for display_name, tickers in CRYPTO_MAP.items():
         df = None
-        basarili_ticker = ""
-        
-        # Her coin için tanımlı ticker'ları sırayla dene (Biri olmazsa diğeri çalışır)
         for ticker in tickers:
             try:
                 temp_df = yf.download(ticker, period=PERIYOT, interval="15m", progress=False)
                 if isinstance(temp_df.columns, pd.MultiIndex):
                     temp_df.columns = temp_df.columns.get_level_values(0)
                 temp_df = temp_df.dropna()
-                
                 if len(temp_df) >= MIN_MUM:
                     df = temp_df
-                    basarili_ticker = ticker
                     break
             except:
                 continue
-
-        if df is None:
-            print(f"{coin}: Hiçbir ticker ile veri alınamadı!")
+                
+        if df is None or len(df) == 0:
+            print(f"{display_name}: Veri alınamadı.")
             continue
-
-        try:
-            l, c = df["Low"].values, df["Close"].values
-            ema = df["Close"].ewm(span=EMA_PERIYOT, adjust=False).mean().values
-
-            son_fiyat_tl = c[-1] * dolar_kur
-            print(f"{coin} ({basarili_ticker}) -> Fiyat (TL): {son_fiyat_tl:.2f}")
-
-            # Son 3 mum içinde temas kontrolü
-            temas_var = False
-            for i in [-1, -2, -3]:
-                if l[i] <= ema[i] * (1 + TEMAS_TOL):
-                    temas_var = True
-                    break
             
-            if temas_var:
-                print(f"-> {coin} İÇİN TEMAS YAKALANDI! Bildirim gönderiliyor...")
-                mesaj = f"🚨 EMA 50 TEMAS ALARMI!\nCoin: {coin}TRY\nFiyat: {round(son_fiyat_tl, 2)} TL\nDurum: EMA 50 Değdi/Yaklaştı!"
-                telegram_bildirim_gonder(mesaj)
+        l = df["Low"].values
+        c = df["Close"].values
+        # EMA 50'yi tüm veri seti için hesapla (grafikte tam görünmesi için)
+        ema_serisi = df["Close"].ewm(span=EMA_PERIYOT, adjust=False).mean()
+        ema = ema_serisi.values
+        
+        # Son mumun zaman damgası (Benzersiz mum kimliği olarak kullanılacak)
+        son_mum_zamani = str(df.index[-1])
+        
+        # Eğer bu mum için daha önce bildirim atıldıysa tekrar atma
+        if last_states.get(display_name) == son_mum_zamani:
+            continue
+            
+        # Son mum EMA 50'ye değdi mi? (%2 tolerans)
+        i = -1
+        if l[i] <= ema[i] * (1 + TEMAS_TOL):
+            # Fiyat hesaplama
+            fiyat = c[i]
+            if "TRY" in display_name and "USDT" not in display_name and "USDC" not in display_name:
+                # Eğer parite USD çekildiyse TL'ye çevir
+                if not display_name.startswith("BTC") and not "TRY" in tickers[0]:
+                    fiyat_goster = fiyat * dolar_kur
+                else:
+                    fiyat_goster = fiyat
             else:
-                print(f"-> {coin} için temas yok.")
-
-        except Exception as e:
-            print(f"HATA İŞLEME ({coin}): {e}")
+                fiyat_goster = fiyat
+                
+            # Formasyon analizi
+            formasyonlar = formasyon_analizi(df, i)
             
+            formasyon_metni = "Normal Temas"
+            if "hammer" in formasyonlar and "bullish_engulfing" in formasyonlar:
+                formasyon_metni = "Çekiç + Yutan Boğa (Güçlü Sinyal!)"
+            elif "hammer" in formasyonlar:
+                formasyon_metni = "Çekiç (Hammer)"
+            elif "bullish_engulfing" in formasyonlar:
+                formasyon_metni = "Yutan Boğa (Bullish Engulfing)"
+
+            mesaj = (
+                f"🚨 *EMA 50 TEMAS ALARMI!*\n\n"
+                f"🪙 *Parite:* `{display_name}`\n"
+                f"💰 *Fiyat:* `{fiyat_goster:.4f}`\n"
+                f"📊 *Formasyon:* *{formasyon_metni}*\n"
+                f"⏰ *Zaman:* `{son_mum_zamani}`"
+            )
+            
+            # Grafik görselini oluştur
+            print(f"-> {display_name} İÇİN TEMAS YAKALANDI! Grafik oluşturuluyor...")
+            resim_buf = grafik_olustur(df, ema_serisi, display_name)
+            
+            # Telegram'a görsel ve mesajı gönder
+            telegram_bildirim_gonder(mesaj, resim_buf)
+            
+            # Bu mum için bildirim gönderildi olarak kaydet
+            new_states[display_name] = son_mum_zamani
+        else:
+            print(f"-> {display_name} için temas yok.")
+
+    state_kaydet(new_states)
     print("--- TARAMA BİTTİ ---")
 
 if __name__ == "__main__":
